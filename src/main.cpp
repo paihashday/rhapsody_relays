@@ -3,6 +3,7 @@
 #include <ESP8266WebServer.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
+#include <EEPROM.h>
 
 
 // Pins relays
@@ -13,12 +14,10 @@ String pinsNicknames[8] = {"relay1", "relay2", "relay3", "relay4", "relay5", "re
 // WiFiManager
 WiFiManager wifiManager;
 
-// Server Web
+// Web server
 ESP8266WebServer server(80);
 
-
-// Retourne les informations de la carte et l'état des différents
-// relais.
+// Returns board informations such as IP address, SSID or relays states
 void getBoardInfos() {
   StaticJsonDocument<256> boardInfosJson;
 
@@ -28,7 +27,7 @@ void getBoardInfos() {
   boardInfosJson["chip_id"] = String(ESP.getChipId(), HEX);
   boardInfosJson["board_type"] = "rhapsody_relays";
 
-  // Ajout de l'état des relays
+  // Add relays states
   JsonArray relays = boardInfosJson["relays"].to<JsonArray>();
   for(int i = 0; i < 8; i++) {
     if(pinsStates[i] == LOW) {
@@ -38,18 +37,25 @@ void getBoardInfos() {
     }
   }
 
+  int defaultState = EEPROM.read(0);
+  Serial.println(defaultState);
+  if(defaultState == 1) {
+    boardInfosJson["default_state"] = "on";
+  } else {
+    boardInfosJson["default_state"] = "off";
+  }
+
   String response;
   serializeJson(boardInfosJson, response);
   server.send(200, "application/json", response);
 }
 
 
-
-// Récupère les données envoyées par le client et
-// change l'état des relais en fonction
+// Retrieves data sent by the client and changes
+// relays states accordingly
 void updateRelayState() {
 
-  // Si une requête autre que POST est envoyée sur cette route
+  // If a request other than POST is sent to this route
   if(server.method() != HTTP_POST) {
     server.send(405, "application/json", "{\"error\"}:{\"Unauthorized method\"}");
     return;
@@ -59,12 +65,14 @@ void updateRelayState() {
   StaticJsonDocument<256> requestArgs;
   DeserializationError error = deserializeJson(requestArgs, body);
 
+  // If there's an error in the JSON file
   if(error) {
     server.send(400, "application/json", "{\"error\": \"Invalid JSON body\"}");
     return;
   }
 
-  for(int i; i < 8; i++) {
+  // Updates each relay's state
+  for(int i = 0; i < 8; i++) {
     if(requestArgs.containsKey(pinsNicknames[i])) {
       String relayState = requestArgs[pinsNicknames[i]];
       if(relayState == "ON") {
@@ -77,13 +85,15 @@ void updateRelayState() {
         Serial.println("Turning off" + pinsNicknames[i]);
       }
     }
+
+    // Provides board's infos
     getBoardInfos();
   }
 }
 
 
 void editHostname() {
-  // Si une requête autre que POST est envoyée sur cette route
+  // If a request other than POST is sent to this route
   if(server.method() != HTTP_POST) {
     server.send(405, "application/json", "{\"error\":\"Unauthorized method\"}");
     return;
@@ -93,36 +103,37 @@ void editHostname() {
   StaticJsonDocument<256> requestArgs;
   DeserializationError error = deserializeJson(requestArgs, body);
 
-  // Si il y a une erreur dans le fichier JSON empêchant sa déserialisation
+  // If there's an error in the JSON file
   if(error) {
     server.send(400, "application/json", "\"error\":\"Invalid JSON body\"");
     return;
   }
 
-  if(requestArgs.containsKey("hostname")) {
-    String newHostname = requestArgs["hostname"];
+  // Read the content of the h argument and changes the value
+  if(requestArgs.containsKey("h")) {
+    String newHostname = requestArgs["h"];
     WiFi.hostname(newHostname.c_str());
   }
 
+  // Provides board's infos
   getBoardInfos();
 }
-
 
 
 void setup() {
   // Initialisation du port série
   Serial.begin(9600);
   delay(1000);
-  Serial.println("Port série OK");
+  Serial.println("Serial OK");
 
   // Initialisation du WiFI
   if(!wifiManager.autoConnect("rhapsody_relays_AP")) {
-    Serial.println("Echec de la connexion ou de la création du point d'accès");
+    Serial.println("Failed to connect or create an Access Point");
     ESP.reset();
     delay(1000);
   }
-  Serial.println("Connecté au WiFi !");
-  Serial.print("Adresse IP : ");
+  Serial.println("Connected to WiFi!");
+  Serial.print("IP address : ");
   Serial.println(WiFi.localIP());
 
   // Configuration des pins
@@ -130,8 +141,13 @@ void setup() {
     pinMode(pinsNumbers[i], OUTPUT);
   }
 
+  // Initialisation des relays
+  for(int i = 0; i < 8; i++) {
+    digitalWrite(pinsNumbers[i], HIGH);
+  }
+
   // Définition des routes du serveur
-  Serial.println("Démarrage du serveur");
+  Serial.println("Starting server");
 
   server.on("/infos", HTTP_GET, getBoardInfos);
   server.on("/control", HTTP_POST, updateRelayState);
@@ -143,7 +159,7 @@ void setup() {
   // Démarrage du serveur
   server.begin();
 
-  Serial.println("Serveur démarré !");
+  Serial.println("Server started!");
 }
 
 
