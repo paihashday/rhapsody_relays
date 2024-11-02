@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
+#include <configs.h> // Contains a file with the IP address of the server named server_ip_address
+
 
 // Pins relays
 int pinsNumbers[8] = {16, 5, 4, 0, 2, 14, 12, 13};
@@ -149,7 +151,7 @@ void setup() {
 
   // Récupération de l'état des relays
   HTTPClient http;
-  String url = "http://switchs/states/" + String(ESP.getChipId(), HEX);
+  String url = "http://" + server_ip_address + "/switchs/states/" + String(ESP.getChipId(), HEX);
   Serial.print(url);
   http.begin(wifiClient, url);
   int httpCode = http.GET();
