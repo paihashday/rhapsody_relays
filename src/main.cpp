@@ -1,14 +1,14 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
 
-
 // Pins relays
-int pinsNumbers[8] = {5, 4, 0, 2, 14, 12, 13, 15};
-int pinsStates[8] = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
+int pinsNumbers[8] = {16, 5, 4, 0, 2, 14, 12, 13};
+int pinsStates[8] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH};
 String pinsNicknames[8] = {"relay1", "relay2", "relay3", "relay4", "relay5", "relay6", "relay7", "relay8"};
 
 // WiFiManager
@@ -16,6 +16,26 @@ WiFiManager wifiManager;
 
 // Web server
 ESP8266WebServer server(80);
+
+
+// Reads the StaticJsonDocument and toggles relays accordingly
+void toggleRelays(StaticJsonDocument<256> newRelaysStates) {
+  for(int i = 0; i < 8; i++) {
+    if(newRelaysStates.containsKey(pinsNicknames[i])) {
+      String relayState = newRelaysStates[pinsNicknames[i]];
+      if(relayState == "ON") {
+        pinsStates[i] =  HIGH;
+        digitalWrite(pinsNumbers[i], HIGH);
+        Serial.println("Turning on" + pinsNicknames[i]);
+      } else if(relayState == "OFF") {
+        pinsStates[i] = LOW;
+        digitalWrite(pinsNumbers[i], LOW);
+        Serial.println("Turning off" + pinsNicknames[i]);
+      }
+    }
+  }
+}
+
 
 // Returns board informations such as IP address, SSID or relays states
 void getBoardInfos() {
@@ -35,14 +55,6 @@ void getBoardInfos() {
     } else {
       relays.add("ON");
     }
-  }
-
-  int defaultState = EEPROM.read(0);
-  Serial.println(defaultState);
-  if(defaultState == 1) {
-    boardInfosJson["default_state"] = "on";
-  } else {
-    boardInfosJson["default_state"] = "off";
   }
 
   String response;
@@ -71,24 +83,11 @@ void updateRelayState() {
     return;
   }
 
-  // Updates each relay's state
-  for(int i = 0; i < 8; i++) {
-    if(requestArgs.containsKey(pinsNicknames[i])) {
-      String relayState = requestArgs[pinsNicknames[i]];
-      if(relayState == "ON") {
-        pinsStates[i] = HIGH;
-        digitalWrite(pinsNumbers[i], HIGH);
-        Serial.println("Turning on" + pinsNicknames[i]);
-      } else {
-        pinsStates[i] = LOW;
-        digitalWrite(pinsNumbers[i], LOW);
-        Serial.println("Turning off" + pinsNicknames[i]);
-      }
-    }
+  // Toggles relays
+  toggleRelays(requestArgs);
 
-    // Provides board's infos
-    getBoardInfos();
-  }
+  // Provides new board's infos
+  getBoardInfos();
 }
 
 
@@ -132,9 +131,11 @@ void setup() {
     ESP.reset();
     delay(1000);
   }
+  WiFiClient wifiClient;
   Serial.println("Connected to WiFi!");
   Serial.print("IP address : ");
   Serial.println(WiFi.localIP());
+
 
   // Configuration des pins
   for(int i = 0; i < 8; i++) {
@@ -145,6 +146,35 @@ void setup() {
   for(int i = 0; i < 8; i++) {
     digitalWrite(pinsNumbers[i], HIGH);
   }
+
+  // Récupération de l'état des relays
+  HTTPClient http;
+  String url = "http://switchs/states/" + String(ESP.getChipId(), HEX);
+  Serial.print(url);
+  http.begin(wifiClient, url);
+  int httpCode = http.GET();
+  if(httpCode > 0) {
+    if(httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      Serial.println("Received an answer from the server");
+      Serial.println(payload);
+
+      StaticJsonDocument<256> doc;
+
+      DeserializationError error = deserializeJson(doc, payload);
+      if(error) {
+        Serial.print(F("Error while analyzing JSON body: "));
+        Serial.println(error.f_str());
+      } else {
+        toggleRelays(doc);
+      }
+    } else {
+      Serial.printf("Unexpected HTTP response code: %d\n", httpCode);
+    }
+  } else {
+    Serial.printf("HTTP request failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
 
   // Définition des routes du serveur
   Serial.println("Starting server");
