@@ -28,11 +28,11 @@ void toggleRelays(StaticJsonDocument<256> newRelaysStates) {
       if(relayState == "ON") {
         pinsStates[i] =  HIGH;
         digitalWrite(pinsNumbers[i], HIGH);
-        Serial.println("Turning on" + pinsNicknames[i]);
+        Serial.println("Turning on " + pinsNicknames[i]);
       } else if(relayState == "OFF") {
         pinsStates[i] = LOW;
         digitalWrite(pinsNumbers[i], LOW);
-        Serial.println("Turning off" + pinsNicknames[i]);
+        Serial.println("Turning off " + pinsNicknames[i]);
       }
     }
   }
